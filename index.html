@@ -1,1102 +1,1267 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>rheophile</title>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPX Time-Range Viewer</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <style>
-      /* Design tokens */
-      :root {
-        --text-color: white;
-        --font-family: Arial, sans-serif;
-      }
-
-      /* Homepage styles */
-      .homepage {
-        margin: 0;
-        height: 100vh;
-        background: linear-gradient(180deg, #004175 0%, #001428 100%);
-        overflow: hidden;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        font-family: Arial, sans-serif;
-      }
-
-      .particleCanvas {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        pointer-events: none;
-      }
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            height: 80vh;
+            width: 100%;
+        }
+        .controls {
+            padding: 15px;
+            background-color: #f8f8f8;
+            border-bottom: 1px solid #ddd;
+        }
+        .time-display {
+            margin-top: 10px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .slider-container {
+            margin: 20px 10px;
+            height: 40px;
+        }
+        .playback-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        .playback-button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .playback-button:hover {
+            background-color: #45a049;
+        }
+        .playback-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .playback-button.active {
+            background-color: #f44336;
+        }
+        .file-input {
+            margin-bottom: 15px;
+        }
+        .date-selector {
+            margin-bottom: 15px;
+        }
+        .date-selector select {
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            font-size: 14px;
+            min-width: 200px;
+        }
+        .date-selector label {
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .minute-controls {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+        .minute-button {
+            background-color: #2196F3;
+            border: none;
+            color: white;
+            padding: 6px 10px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        .minute-button:hover {
+            background-color: #0b7dda;
+        }
+        .minute-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .path-list-container {
+            margin-top: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+        }
+        .path-list-header {
+            padding: 10px;
+            background-color: #f0f0f0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #ddd;
+        }
+        .path-list-content {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .path-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .color-indicator {
+            width: 15px;
+            height: 15px;
+            margin-right: 10px;
+            border-radius: 50%;
+        }
+        .collapsed .path-list-content {
+            display: none;
+        }
+        .toggle-icon {
+            transition: transform 0.3s;
+        }
+        .collapsed .toggle-icon {
+            transform: rotate(-90deg);
+        }
+        /* noUiSlider custom styles */
+        .noUi-connect {
+            background: #2ECC40;
+        }
+        .noUi-handle {
+            border-radius: 50%;
+            box-shadow: none;
+        }
+        #slider-values {
+            margin-top: 10px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .speed-label {
+            font-size: 12px;
+            color: #666;
+            margin-left: 5px;
+        }
     </style>
-  </head>
-  <body></body>
-  <script id="siteContent" type="application/json">
-    {
-      "siteContent": ["homeMenu", "particleBackground"]
-    }
-  </script>
-  <script id="particleBackground" type="application/json">
-    {
-      "funcs": [
-        {
-          "name": "makeDrawParticleInstructions",
-          "body": "const makeDrawParticleInstructions = ({particles}) => {\n const wipeCanvasOp = {\n    method: 'clearRect',\n    args: [0, 0, window.innerWidth, window.innerHeight]\n  };\n  const operations = particles.particles.flatMap((particle) => [\n    {\n      method: 'beginPath',\n      args: []\n    },\n    {\n      method: 'arc', \n      args: [particle.x, particle.y, particle.size, 0, Math.PI * 2]\n    },\n    {\n      method: 'set',\n      property: 'fillStyle',\n      value: `rgba(255, 255, 255, ${particle.opacity})`\n    },\n    {\n      method: 'fill',\n      args: []\n    }\n  ]);\n  return [{\n    tag: 'canvas',\n    height: window.innerHeight,\n    width: window.innerWidth,\n    id: 'particleCanvas', \n    parentId: 'root',\n    className: 'particleCanvas',\n    canvasOps: [wipeCanvasOp, ...operations]\n  }];\n};",
-          "params": [
-            {
-              "name": "particles",
-              "type": "array",
-              "required": true
-            }
-          ],
-          "funcType": "local",
-          "returnType": "array"
-        },
-        {
-          "name": "updateParticleList",
-          "body": "const updateParticleList = ({particles, count}) => {\n  const createParticle = () => ({\n    x: Math.random() * window.innerWidth,\n    y: Math.random() * window.innerHeight,\n    vx: (Math.random() * 0.01),\n    vy: Math.random() * 0.3,\n    wobble: Math.random() * 0.5,\n    opacity: Math.random() * 0.4 + 0.1,\n    size: Math.random() + 1,\n  });\n\n  const updateParticle = (particle) => {\n    particle.y += particle.vy;\n    particle.x += particle.vx + Math.sin(particle.y * 0.02) * particle.wobble;\n  \n    if (particle.y > window.innerHeight) {\n      particle.y = -5;\n      particle.x = Math.random() * window.innerWidth;\n    }\n    \n    return particle;\n  };\n\n  if (!particles.length) {\n    return {particles: Array.from({ length: count }, () => createParticle())};\n  } else {\n    return {particles: particles.map(updateParticle)};\n  }\n};",
-          "params": [
-            {
-              "name": "particles",
-              "type": "array",
-              "required": true
-            },
-            {
-              "name": "count",
-              "type": "number",
-              "required": true
-            }
-          ],
-          "funcType": "selfRef",
-          "returnType": "array"
-        }
-      ],
-      "nodes": [
-        {
-          "nodeId": "particles",
-          "value": {
-            "particles": []
-          },
-          "type": "object",
-          "queueAction": "animate",
-          "funcName": "updateParticleList",
-          "staticParams": {
-            "count": 100
-          }
-        },
-        {
-          "nodeId": "particleOperations",
-          "value": [],
-          "type": "array",
-          "funcName": "makeDrawParticleInstructions",
-          "nodeParams": {
-            "particles": "particles"
-          }
-        },
-        {
-          "nodeId": "particleCanvas",
-          "value": [],
-          "type": "node",
-          "funcName": "nodeUpdates",
-          "staticParams": {
-            "active": true
-          },
-          "nodeParams": {
-            "attributes": "particleOperations"
-          }
-        }
-      ]
-    }
-  </script>
-  <script id="homeMenu" type="application/json">
-    {
-      "funcs": [],
-      "nodes": [
-        {
-          "nodeId": "home",
-          "value": null,
-          "type": "node",
-          "funcName": "nodeUpdates",
-          "staticParams": {
-            "active": true,
-            "attributes": [
-              {
-                "tag": "div",
-                "id": "home",
-                "parentId": "root",
-                "className": "homepage"
-              }
-            ]
-          },
-          "nodeParams": {}
-        },
-        {
-          "nodeId": "menuGraph",
-          "value": {
-            "rheophile": {
-              "children": ["you", "apps", "blag", "edit"],
-              "parent": null,
-              "text": "rheophile",
-              "distance": 0
-            },
-            "you": {
-              "children": ["dissent", "datas"],
-              "parent": "rheophile",
-              "text": "you",
-              "distance": 1
-            },
-            "apps": {
-              "children": ["notLibreCalc"],
-              "parent": "rheophile",
-              "text": "apps",
-              "distance": 1
-            },
-            "blag": {
-              "children": [],
-              "parent": "rheophile",
-              "text": "blag",
-              "distance": 1
-            },
-            "edit": {
-              "children": [],
-              "parent": "rheophile",
-              "text": "edit",
-              "distance": 1
-            },
-            "notLibreCalc": {
-              "children": [],
-              "parent": "apps",
-              "text": "notLibreCalc",
-              "distance": 2
-            },
-            "dissent": {
-              "children": [],
-              "parent": "you",
-              "text": "dissent",
-              "distance": 2
-            },
-            "datas": {
-              "children": [],
-              "parent": "you",
-              "text": "datas",
-              "distance": 2
-            }
-          },
-          "type": "object"
-        },
-        {
-          "nodeId": "selectedMenu",
-          "value": "rheophile",
-          "type": "string"
-        }
-      ]
-    }
-  </script>
-  <script id="defaults" type="application/json">
-    {
-      "funcs": [
-        {
-          "name": "nodeUpdates",
-          "body": "const nodeUpdates = ({active, attributes}) => attributes.map(attr => ({\n  action: active ? 'upsert' : 'delete',\n  ...attr\n}));",
-          "params": [
-            {
-              "name": "active",
-              "type": "boolean",
-              "description": "Whether to upsert or delete nodes",
-              "required": true
-            },
-            {
-              "name": "attributes",
-              "type": "array",
-              "description": "Array of node attributes",
-              "required": true
-            }
-          ],
-          "funcType": "local",
-          "returnType": "array",
-          "description": "Creates multiple DOM update operations from an array of attributes"
-        }
-      ],
-      "nodes": [
-        {
-          "value": null,
-          "type": "node",
-          "funcName": "nodeUpdates",
-          "staticParams": {
-            "active": true,
-            "attributes": [
-              {
-                "tag": "div",
-                "id": "root"
-              }
-            ]
-          },
-          "nodeParams": {},
-          "nodeId": "root"
-        }
-      ]
-    }
-  </script>
-  <script>
-    const StateManager = (() => {
-      const Types = (() => {
-        const PARAM_TYPES = {
-          STRING: "string",
-          NUMBER: "number",
-          BOOLEAN: "boolean",
-          OBJECT: "object",
-          ARRAY: "array",
-          ANY: "any",
-          DATE: "date",
-          DOM_NODE: "node",
-          EVENT: "event",
-        };
+</head>
+<body>
+    <div class="controls">
+        <div class="file-input">
+            <label for="gpx-file">Upload GPX file:</label>
+            <input type="file" id="gpx-file" accept=".gpx">
+        </div>
 
-        const inferType = (value) => {
-          if (value === null) return null;
-          if (value === undefined) return value;
-          if (Array.isArray(value)) return PARAM_TYPES.ARRAY;
-          if (typeof value === PARAM_TYPES.OBJECT) {
-            if (value instanceof Date) return PARAM_TYPES.DATE;
-            return PARAM_TYPES.OBJECT;
-          }
-          if (
-            [
-              PARAM_TYPES.STRING,
-              PARAM_TYPES.NUMBER,
-              PARAM_TYPES.BOOLEAN,
-            ].includes(typeof value)
-          ) {
-            return typeof value;
-          }
-          return PARAM_TYPES.ANY;
-        };
+        <div class="date-selector">
+            <label for="date">Date:</label>
+            <select id="date" name="date">
+                <option value="">All Dates</option>
+                <!-- Date options will be added here dynamically -->
+            </select>
+        </div>
+        
+        <div class="slider-container">
+            <div id="time-slider"></div>
+            <div id="slider-values">
+                <span id="min-time-display">Start</span>
+                <span id="max-time-display">End</span>
+            </div>
+        </div>
+        
+        <div class="minute-controls">
+            <button id="prev-minute" class="minute-button" title="Go back one minute" disabled>
+                <i class="fas fa-chevron-left"></i> -1 Min
+            </button>
+            <button id="next-minute" class="minute-button" title="Go forward one minute" disabled>
+                <i class="fas fa-chevron-right"></i> +1 Min
+            </button>
+        </div>
+        
+        <div class="playback-controls">
+            <button id="play-slow" class="playback-button" title="Play at 1 minute per second">
+                <i class="fas fa-play"></i> Slow
+                <span class="speed-label">(1 min/sec)</span>
+            </button>
+            <button id="play-fast" class="playback-button" title="Play at 15 minutes per second">
+                <i class="fas fa-forward"></i> Fast
+                <span class="speed-label">(15 min/sec)</span>
+            </button>
+            <button id="pause" class="playback-button" disabled title="Pause playback">
+                <i class="fas fa-pause"></i> Pause
+            </button>
+            <button id="reset" class="playback-button" title="Reset to start">
+                <i class="fas fa-undo"></i> Reset
+            </button>
+        </div>
+        
+        <div class="time-display">
+            <div id="absolute-time-range">Time range: Not set</div>
+        </div>
+        
+        <div class="path-list-container" id="path-list-container">
+            <div class="path-list-header" id="path-list-header">
+                <span>Paths</span>
+                <span class="toggle-icon">▼</span>
+            </div>
+            <div class="path-list-content" id="path-list">
+                <!-- Path list items will be added here dynamically -->
+            </div>
+        </div>
+    </div>
+    
+    <div id="map"></div>
 
-        return {
-          PARAM_TYPES,
-          inferType,
-        };
-      })();
-
-      const FunctionRegistry = (() => {
-        const functions = {};
-        const lambdaCache = {};
-
-        const FUNCTION_TYPE = {
-          DATA_LOADING: "dataLoading",
-          VOLATILE: "volatile",
-          LOCAL: "local",
-          SELFREF: "selfRef",
-        };
-
-        const createParam = ({
-          name,
-          description,
-          type = Types.PARAM_TYPES.ANY,
-          required = true,
-          defaultValue = null,
-        }) => ({
-          name,
-          type,
-          required,
-          default: defaultValue,
-        });
-
-        const createLambda = (funcName, staticParams = {}, async = false) => {
-          const { params, funcType, body, name } = getFuncDef(funcName);
-
-          const allParamSet = new Set(Object.keys(params));
-          const dynamicParams = Array.from(allParamSet).filter(
-            (p) => !(p in staticParams)
-          );
-
-          const bodyParts = [];
-
-          if (Object.keys(staticParams).length) {
-            bodyParts.push(
-              Object.entries(staticParams)
-                .map(([key, val]) => `const ${key} = ${JSON.stringify(val)};`)
-                .join("\n")
-            );
-          }
-
-          bodyParts.push(
-            `const {${dynamicParams.join(",")}} = arguments[0] || {};`
-          );
-
-          bodyParts.push(body);
-
-          if (async) {
-            bodyParts.push(
-              `return async () => await ${name}(${Array.from(allParamSet).join(
-                ","
-              )});`
-            );
-          } else {
-            bodyParts.push(
-              `return ${name}({${Array.from(allParamSet).join(",")}});`
-            );
-          }
-
-          return new Function("params", bodyParts.join("\n"));
-        };
-
-        const initLambda = (nodeId, cacheKey, funcName, staticParams) => {
-          const cached = lambdaCache[cacheKey];
-          if (cached) {
-            cached.nodeIds.push(nodeId);
-            return {
-              cacheKey,
-              funcType: cached.funcType,
-            };
-          }
-
-          const { funcType, async } = getFuncDef(funcName);
-
-          lambdaCache[cacheKey] = {
-            lambda: createLambda(funcName, staticParams, async),
-            nodeIds: [nodeId],
-            funcType,
-          };
-
-          return { cacheKey, funcType };
-        };
-
-        const getFuncDef = (funcName) => {
-          if (!functions[funcName]) {
-            throw new Error(`Function ${funcName} is not defined`);
-          }
-          return functions[funcName];
-        };
-
-        const removeNodeFromLambda = (lambda, nodeId) => {
-          lambda.nodeIds = lambda.nodeIds.filter((id) => id !== nodeId);
-          return lambda.nodeIds.length === 0;
-        };
-
-        const registerFunction = ({
-          name,
-          body,
-          async = true,
-          params = [],
-          returnType = PARAM_TYPES.ANY,
-          funcType = FUNCTION_TYPE.LOCAL,
-          description = "",
-        }) => {
-          if (!name || !body) {
-            throw new Error("Function name and body are required");
-          }
-          const processedParams = Object.fromEntries(
-            params.map((param) => [param.name, createParam(param)])
-          );
-          const functionDefinition = {
-            name,
-            body,
-            params: processedParams,
-            returnType,
-            funcType,
-            description,
-          };
-          functions[name] = functionDefinition;
-          return functionDefinition;
-        };
-
-        const registerLambda = (nodeId, funcName, staticParams = {}) => {
-          const paramKey =
-            Object.keys(staticParams).length > 0
-              ? JSON.stringify(staticParams)
-              : "";
-          const cacheKey = `${funcName}_${paramKey}`;
-          return initLambda(nodeId, cacheKey, funcName, staticParams);
-        };
-
-        const deRegisterLambda = (cacheKey, nodeId) => {
-          const lambda = lambdaCache[cacheKey];
-
-          if (!lambda) {
-            throw new Error(`Lambda ${cacheKey} is not defined`);
-          }
-
-          if (removeNodeFromLambda(lambda, nodeId)) {
-            delete lambdaCache[cacheKey];
-            return true;
-          }
-
-          return false;
-        };
-
-        return {
-          registerFunction,
-          registerLambda,
-          deRegisterLambda,
-          FUNCTION_TYPE,
-          getLambda: (cacheKey) => lambdaCache[cacheKey],
-        };
-      })();
-
-      const DependencyGraph = (() => {
-        const Graph = {
-          outbound: new Map(),
-          inbound: new Map(),
-          topology: [],
-        };
-
-        const hasCycle = (
-          startId,
-          visited = new Set(),
-          stack = new Set(),
-          path = []
-        ) => {
-          if (stack.has(startId)) {
-            const cycleStart = path.indexOf(startId);
-            return { hasCycle: true, cyclePath: path.slice(cycleStart) };
-          }
-          if (visited.has(startId)) return { hasCycle: false };
-
-          visited.add(startId);
-          stack.add(startId);
-          path.push(startId);
-
-          const outEdges = Graph.outbound.get(startId) || new Set();
-          for (const neighbor of outEdges) {
-            const result = hasCycle(neighbor, visited, stack, path);
-            if (result.hasCycle) return result;
-          }
-
-          stack.delete(startId);
-          path.pop();
-          return { hasCycle: false };
-        };
-
-        const updateTopologicalLevels = () => {
-          const visited = new Set();
-          const levels = [];
-          const inProcess = new Set();
-
-          const sourceNodes = Array.from(Graph.outbound.keys()).filter(
-            (nodeId) => !Graph.inbound.has(nodeId)
-          );
-
-          if (sourceNodes.length > 0) {
-            levels.push(sourceNodes);
-          }
-
-          let currentLevel = sourceNodes;
-
-          while (currentLevel.length > 0) {
-            const nextLevel = new Set();
-
-            for (const node of currentLevel) {
-              if (!visited.has(node)) {
-                visited.add(node);
-                const outEdges = Graph.outbound.get(node) || new Set();
-
-                for (const target of outEdges) {
-                  if (
-                    target !== null &&
-                    !visited.has(target) &&
-                    !inProcess.has(target)
-                  ) {
-                    const inEdges = Graph.inbound.get(target) || new Set();
-                    if (Array.from(inEdges).every((dep) => visited.has(dep))) {
-                      nextLevel.add(target);
-                      inProcess.add(target);
-                    }
-                  }
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.7.0/nouislider.min.js"></script>
+    
+    <script>
+        /**
+         * GPX Parser - A functional approach to parsing GPX files with time data
+         * Time Complexity: O(n) where n is the number of points in the GPX file
+         * Space Complexity: O(n) for storing the parsed points
+         */
+        const GPXParser = (() => {
+            // Cache for parsed tracks to avoid re-parsing
+            const trackCache = new Map();
+            
+            /**
+             * Parse a GPX string into track data with time information
+             * @param {string} gpxString - The GPX file content as string
+             * @returns {Array} Array of track objects
+             */
+            const parseGPX = (gpxString, fileId) => {
+                // Check cache first
+                if (trackCache.has(fileId)) {
+                    return trackCache.get(fileId);
                 }
-              }
-            }
-
-            if (nextLevel.size > 0) {
-              levels.push(Array.from(nextLevel));
-            }
-            currentLevel = Array.from(nextLevel);
-          }
-
-          Graph.levels = levels;
-        };
-
-        const addEdge = (fromId, toId) => {
-          if (!Graph.outbound.has(fromId)) {
-            Graph.outbound.set(fromId, new Set());
-          }
-          Graph.outbound.get(fromId).add(toId);
-
-          if (!Graph.inbound.has(toId)) {
-            Graph.inbound.set(toId, new Set());
-          }
-          Graph.inbound.get(toId).add(fromId);
-
-          const cycleCheck = hasCycle(fromId);
-          if (cycleCheck.hasCycle) {
-            removeEdge(fromId, toId);
-            throw new Error(
-              `Cycle detected: ${cycleCheck.cyclePath.join(" -> ")}`
-            );
-          }
-
-          updateTopologicalLevels();
-          return cycleCheck;
-        };
-
-        const registerUpStreamEdges = (nodeId, upStreamNodes) => {
-          if (upStreamNodes) {
-            upStreamNodes.forEach((targetNode) => {
-              try {
-                addEdge(targetNode, nodeId);
-              } catch (error) {
-                console.error(
-                  `Failed to add edge from ${targetNode} to ${nodeId}: ${error.message}`
-                );
-              }
-            });
-          } else {
-            addEdge(null, nodeId);
-          }
-        };
-
-        const removeEdge = (fromId, toId) => {
-          if (Graph.outbound.has(fromId)) {
-            const outEdges = Graph.outbound.get(fromId);
-            outEdges.delete(toId);
-            if (outEdges.size === 0) {
-              Graph.outbound.delete(fromId);
-            }
-          }
-
-          if (toId !== null && Graph.inbound.has(toId)) {
-            const inEdges = Graph.inbound.get(toId);
-            inEdges.delete(fromId);
-            if (inEdges.size === 0) {
-              Graph.inbound.delete(toId);
-            }
-          }
-
-          updateTopologicalLevels();
-        };
-
-        const getDownstreamTopology = (nodeId) => {
-          const visited = new Set();
-          const levels = [];
-          let currentLevel = new Set([nodeId]);
-
-          while (currentLevel.size > 0) {
-            const nextLevel = new Set();
-
-            for (const current of currentLevel) {
-              if (!visited.has(current)) {
-                visited.add(current);
-                const outEdges = Graph.outbound.get(current) || new Set();
-
-                for (const target of outEdges) {
-                  if (target !== null && !visited.has(target)) {
-                    nextLevel.add(target);
-                  }
-                }
-              }
-            }
-
-            if (currentLevel.size > 0) {
-              levels.push(Array.from(currentLevel));
-            }
-            currentLevel = nextLevel;
-          }
-
-          return levels;
-        };
-
-        const getDownstreamNodes = (nodeId) => {
-          const visited = new Set();
-          const queue = [nodeId];
-
-          while (queue.length > 0) {
-            const current = queue.shift();
-            if (visited.has(current)) continue;
-            visited.add(current);
-            const outEdges = Graph.outbound.get(current) || new Set();
-            for (const target of outEdges) {
-              if (target !== null && !visited.has(target)) {
-                queue.push(target);
-              }
-            }
-          }
-          return Array.from(visited);
-        };
-
-        const removeNodeFromGraph = (nodeId) => {
-          if (Graph.outbound.has(nodeId)) {
-            const outEdges = Graph.outbound.get(nodeId);
-            for (const targetNode of outEdges) {
-              removeEdge(nodeId, targetNode);
-            }
-          }
-
-          if (Graph.inbound.has(nodeId)) {
-            const inEdges = Graph.inbound.get(nodeId);
-            for (const sourceNode of inEdges) {
-              removeEdge(sourceNode, nodeId);
-            }
-          }
-        };
-
-        return {
-          getGraphs: () => Graph,
-          addEdge,
-          removeEdge,
-          removeNodeFromGraph,
-          getDownstreamTopology,
-          getDownstreamNodes,
-          registerUpStreamEdges,
-        };
-      })();
-
-      const NodeStore = (() => {
-        const nodes = {};
-
-        const createNode = ({
-          nodeId,
-          value,
-          type = Types.inferType(value),
-          queueAction = Calculator.actionTypes.UPSERT,
-          dirty = true,
-          funcName = null,
-          staticParams = {},
-          nodeParams = {},
-        }) => {
-          if (nodeId in nodes) {
-            throw new Error(`Node ${nodeId} already exists`);
-          }
-          const nodeData = {
-            nodeId,
-            value,
-            type,
-            dirty,
-            func: null,
-          };
-
-          DependencyGraph.registerUpStreamEdges(
-            nodeId,
-            Object.values(nodeParams)
-          );
-
-          if (funcName) {
-            const { cacheKey, funcType } = FunctionRegistry.registerLambda(
-              nodeId,
-              funcName,
-              staticParams
-            );
-            const func = {
-              lambdaCacheKey: cacheKey,
-              funcType: funcType,
-              staticParams,
-              nodeParams: nodeParams,
-              nodeParamsCache: null,
+                
+                const parser = new DOMParser();
+                const gpx = parser.parseFromString(gpxString, "text/xml");
+                
+                // Extract tracks
+                const tracks = Array.from(gpx.querySelectorAll('trk'))
+                    .map(parseTrack)
+                    .filter(track => track.segments.length > 0);
+                    
+                // Store in cache
+                trackCache.set(fileId, tracks);
+                
+                return tracks;
             };
-            nodeData.func = func;
-          }
-          nodes[nodeId] = nodeData;
-        };
-
-        const dirtyNode = (nodeId) => {
-          const node = nodes[nodeId];
-          if (!node) {
-            throw new Error(`Node ${nodeId} is not defined`);
-          }
-          nodes[nodeId] = { ...node, dirty: true };
-        };
-
-        const compareNodeParams = (nodeParams, newNodeParams) => {
-          if (!nodeParams) return true;
-          return Object.entries(nodeParams).every(([key, value]) => {
-            return newNodeParams[key] === value;
-          });
-        };
-
-        const calculateNode = async (nodeId) => {
-          const node = nodes[nodeId];
-          if (!node) {
-            throw new Error(`Node ${nodeId} is not defined`);
-          }
-          if (!node.func) {
-            nodes[nodeId] = { ...node, dirty: false };
-            return node.value;
-          }
-          const { lambdaCacheKey, funcType } = node.func;
-          const { lambda } = FunctionRegistry.getLambda(lambdaCacheKey);
-          const newNodeParams = getNodeParams(node.func.nodeParams);
-          const updateNeeded = compareNodeParams(
-            node.func.nodeParamsCache,
-            newNodeParams
-          );
-          if (!updateNeeded) {
-            nodes[nodeId] = { ...node, dirty: false };
-            return node.value;
-          }
-
-          const combinedParams = {
-            ...node.func.staticParams,
-            ...newNodeParams,
-            ...(node.func.funcType === FunctionRegistry.FUNCTION_TYPE.SELFREF
-              ? node.value
-              : {}),
-          };
-
-          const result = await lambda(combinedParams);
-          const newNode = { ...node, value: result };
-          switch (funcType) {
-            case FunctionRegistry.FUNCTION_TYPE.LOCAL:
-              newNode.dirty = false;
-              break;
-            case FunctionRegistry.FUNCTION_TYPE.VOLATILE:
-              newNode.dirty = true;
-              break;
-            case FunctionRegistry.FUNCTION_TYPE.DATA_LOADING:
-              throw new Error("Data loading functions are not implemented");
-          }
-          nodes[nodeId] = newNode;
-          return newNode;
-        };
-
-        const removeNode = (nodeId) => {
-          const node = nodes[nodeId];
-          if (node.func) {
-            FunctionRegistry.deRegisterLambda(nodeId, node.func.lambdaCacheKey);
-          }
-          delete nodes[nodeId];
-          DependencyGraph.removeNodeFromGraph(nodeId);
-        };
-
-        const getNodeParams = (nodeParams) => {
-          return Object.fromEntries(
-            Object.entries(nodeParams).map(([key, value]) => {
-              const targetNode = nodes[value];
-              return [key, targetNode.value];
-            })
-          );
-        };
-
-        return {
-          createNode,
-          calculateNode,
-          getNode: (nodeId) => nodes[nodeId],
-          removeNode,
-          getNodes: () => nodes,
-          dirtyNode,
-        };
-      })();
-
-      const DOMUpdator = (() => {
-        const listeners = {};
-
-        const DOM_ACTION = {
-          UPSERT: "upsert",
-          DELETE: "delete",
-        };
-
-        const attachEventListener = (
-          el,
-          event,
-          nodeId,
-          funcNodeId,
-          funcName,
-          staticParams = {},
-          nodeParams = {}
-        ) => {
-          const valueNode = NodeStore.createNode({
-            value: null,
-            type: Types.PARAM_TYPES.EVENT,
-            nodeId,
-          });
-          const functionNode = NodeStore.createNode({
-            value: null,
-            nodeId: funcNodeId,
-            funcName,
-            funcType: FunctionRegistry.FUNCTION_TYPE.VOLATILE,
-            staticParams,
-            nodeParams: {
-              ...nodeParams,
-              event: valueNode.nodeId,
-            },
-          });
-          const listenerCallback = (e) => {
-            NodeStore.enqueue(
-              {
-                value: e,
-                type: Types.PARAM_TYPES.EVENT,
-                nodeId: valueNode.nodeId,
-              },
-              "upsert"
-            );
-          };
-
-          el.addEventListener(event, listenerCallback);
-          if (nodeId in listeners) {
-            listeners[nodeId].push({ event, listenerCallback });
-          } else {
-            listeners[nodeId] = [{ event, listenerCallback }];
-          }
-
-          return { valueNode, functionNode };
-        };
-
-        const cleanupListeners = (nodeId) => {
-          if (nodeId in listeners) {
-            listeners[nodeId].forEach(({ event, listenerCallback }) =>
-              el.removeEventListener(event, listenerCallback)
-            );
-          }
-        };
-
-        const updateNodes = (operations = []) => {
-          return new Promise((resolve) => {
-            requestAnimationFrame(() => {
-              operations.forEach(
-                ({
-                  id,
-                  action,
-                  tag,
-                  parentId,
-                  canvasOps = [],
-                  listeners = {},
-                  ...rest
-                }) => {
-                  const deleteNode = (id) => {
-                    const el = document.getElementById(id);
-                    if (!el) return;
-                    if (NodeStore.getNode(id)) {
-                      getDownstreamNodes(id)
-                        .filter((n) => {
-                          const node = NodeStore.getNode(n);
-                          return (
-                            node?.type === Types.PARAM_TYPES.DOM_NODE &&
-                            listeners[n]
-                          );
-                        })
-                        .forEach(cleanupListeners);
+            
+            /**
+             * Parse a single track element
+             * @param {Element} trackElement - The track DOM element
+             * @returns {Object} Track object with name and segments
+             */
+            const parseTrack = (trackElement) => {
+                const name = trackElement.querySelector('name')?.textContent || 'Unnamed Track';
+                
+                // Extract track segments
+                const segments = Array.from(trackElement.querySelectorAll('trkseg'))
+                    .map(parseSegment)
+                    .filter(segment => segment.points.length > 0);
+                    
+                return {
+                    name,
+                    segments
+                };
+            };
+            
+            /**
+             * Parse a single track segment
+             * @param {Element} segmentElement - The segment DOM element
+             * @returns {Object} Segment object with points
+             */
+            const parseSegment = (segmentElement) => {
+                const points = Array.from(segmentElement.querySelectorAll('trkpt'))
+                    .map(parsePoint)
+                    .filter(point => point.time !== null); // Only include points with time data
+                    
+                return {
+                    points
+                };
+            };
+            
+            /**
+             * Parse a single track point
+             * @param {Element} pointElement - The trackpoint DOM element
+             * @returns {Object} Point object with lat, lng, time
+             */
+            const parsePoint = (pointElement) => {
+                const lat = parseFloat(pointElement.getAttribute('lat'));
+                const lon = parseFloat(pointElement.getAttribute('lon'));
+                const timeElement = pointElement.querySelector('time');
+                const ele = parseFloat(pointElement.querySelector('ele')?.textContent) || null;
+                
+                let time = null;
+                if (timeElement) {
+                    time = new Date(timeElement.textContent);
+                    // Ensure valid date
+                    if (isNaN(time.getTime())) {
+                        time = null;
                     }
-
-                    el.remove();
-                  };
-
-                  const updateNode = (id, rest, tag, parentId) => {
-                    let el = document.getElementById(id);
-                    if (el) {
-                      Object.assign(el, rest);
-                    } else {
-                      el = Object.assign(document.createElement(tag), rest);
-                      el.id = id;
-                      const parent =
-                        document.getElementById(parentId) || document.body;
-                      parent.appendChild(el);
-                    }
-                    return el;
-                  };
-
-                  const updateCanvas = (el, canvasOps) => {
-                    const ctx = el.getContext("2d");
-                    canvasOps.forEach(({ method, ...args }) => {
-                      if (method === "set") {
-                        ctx[args.property] = args.value;
-                      } else {
-                        ctx[method](...args.args);
-                      }
+                }
+                
+                return {
+                    lat,
+                    lon,
+                    ele,
+                    time
+                };
+            };
+            
+            /**
+             * Filter track segments by time range
+             * @param {Array} tracks - Array of track objects
+             * @param {Date} minTime - Minimum time to include
+             * @param {Date} maxTime - Maximum time to include
+             * @returns {Array} Filtered track objects
+             */
+            const filterTracksByTimeRange = (tracks, minTime, maxTime) => {
+                return tracks.map(track => ({
+                    ...track,
+                    segments: track.segments.map(segment => ({
+                        points: segment.points.filter(point => 
+                            point.time >= minTime && point.time <= maxTime
+                        )
+                    })).filter(segment => segment.points.length > 0)
+                })).filter(track => track.segments.length > 0);
+            };
+            
+        /**
+         * Filter tracks by date (year, month, day)
+         * Time Complexity: O(n) where n is the total number of points
+         * Space Complexity: O(m) where m is the number of points on the specified date
+         * @param {Array} tracks - Array of track objects
+         * @param {string} dateString - Date string in format "YYYY-MM-DD"
+         * @returns {Array} Filtered track objects
+         */
+        const filterTracksByDate = (tracks, dateString) => {
+            // If no date is specified, return all tracks
+            if (!dateString) {
+                return [...tracks];
+            }
+            
+            // Parse date components manually to avoid UTC conversion
+            const [year, month, day] = dateString.split('-').map(num => parseInt(num));
+            
+            // Create start and end of day in local timezone
+            const startOfDay = new Date(year, month - 1, day, 0, 0, 0, 0); // Month is 0-indexed
+            const endOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+            
+            return tracks.map(track => ({
+                ...track,
+                segments: track.segments.map(segment => ({
+                    points: segment.points.filter(point => {
+                        const pointTime = point.time;
+                        // Check if point time is within the day
+                        return pointTime >= startOfDay && pointTime <= endOfDay;
+                    })
+                })).filter(segment => segment.points.length > 0)
+            })).filter(track => track.segments.length > 0);
+        };
+            
+            /**
+             * Get the global time range for all tracks
+             * @param {Array} tracks - Array of track objects
+             * @returns {Object} Object with minTime and maxTime
+             */
+            const getTimeRange = (tracks) => {
+                let minTime = null;
+                let maxTime = null;
+                
+                // Using forEach for a more functional approach
+                tracks.forEach(track => {
+                    track.segments.forEach(segment => {
+                        segment.points.forEach(point => {
+                            if (point.time) {
+                                if (minTime === null || point.time < minTime) {
+                                    minTime = point.time;
+                                }
+                                if (maxTime === null || point.time > maxTime) {
+                                    maxTime = point.time;
+                                }
+                            }
+                        });
                     });
-                  };
-
-                  switch (action) {
-                    case DOM_ACTION.DELETE: {
-                      deleteNode(id);
-                      break;
-                    }
-
-                    case DOM_ACTION.UPSERT: {
-                      const el = updateNode(id, rest, tag, parentId);
-                      if (tag === "canvas") {
-                        updateCanvas(el, canvasOps);
-                      }
-
-                      if (listeners) {
-                        Object.entries(listeners).forEach(
-                          ([event, ...listenerConfig]) => {
-                            attachEventListener(el, event, ...listenerConfig);
-                          }
-                        );
-                      }
-                      break;
-                    }
-
-                    default:
-                      throw new Error(`Invalid DOM operation: ${action}`);
-                  }
+                });
+                
+                return { minTime, maxTime };
+            };
+            
+            /**
+             * Get all unique dates from track points
+             * Time Complexity: O(n) where n is the total number of points
+             * Space Complexity: O(d) where d is the number of unique dates
+             * @param {Array} tracks - Array of track objects
+             * @returns {Array} Array of date strings in format "YYYY-MM-DD"
+             */
+            const getUniqueDates = (tracks) => {
+                const dateSet = new Set();
+                
+                tracks.forEach(track => {
+                    track.segments.forEach(segment => {
+                        segment.points.forEach(point => {
+                            if (point.time) {
+                                const date = new Date(point.time);
+                                const dateString = formatDateToYMD(date);
+                                dateSet.add(dateString);
+                            }
+                        });
+                    });
+                });
+                
+                // Convert Set to Array and sort chronologically
+                return Array.from(dateSet).sort();
+            };
+            
+            /**
+             * Format a Date object to YYYY-MM-DD string
+             * Time Complexity: O(1)
+             * @param {Date} date - Date object
+             * @returns {string} Date string in format "YYYY-MM-DD"
+             */
+            const formatDateToYMD = (date) => {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0'); // months are 0-indexed
+                const day = String(date.getDate()).padStart(2, '0');
+                
+                return `${year}-${month}-${day}`;
+            };
+            
+            /**
+             * Clear the cache for a specific file or all files
+             * @param {string} fileId - Optional file ID to clear from cache
+             */
+            const clearCache = (fileId = null) => {
+                if (fileId === null) {
+                    trackCache.clear();
+                } else if (trackCache.has(fileId)) {
+                    trackCache.delete(fileId);
                 }
-              );
-              resolve();
-            });
-          });
-        };
+            };
+            
+            return {
+                parseGPX,
+                filterTracksByTimeRange,
+                filterTracksByDate,
+                getTimeRange,
+                getUniqueDates,
+                formatDateToYMD,
+                clearCache
+            };
+        })();
 
-        return { updateNodes };
-      })();
+        /**
+         * GPX Time-Range Viewer Application
+         * Time Complexity: 
+         *   - Initial load: O(n) where n is the number of points across all tracks
+         *   - Time slider update: O(n) for filtering points and O(m) for rendering where m is the filtered point count
+         * Space Complexity: O(n) for storing all track data
+         */
+        document.addEventListener('DOMContentLoaded', () => {
+            // Cache DOM elements for better performance
+            const elements = {
+                map: document.getElementById('map'),
+                gpxFileInput: document.getElementById('gpx-file'),
+                dateSelector: document.getElementById('date'),
+                timeSlider: document.getElementById('time-slider'),
+                minTimeDisplay: document.getElementById('min-time-display'),
+                maxTimeDisplay: document.getElementById('max-time-display'),
+                absoluteTimeRange: document.getElementById('absolute-time-range'),
+                pathList: document.getElementById('path-list'),
+                pathListContainer: document.getElementById('path-list-container'),
+                pathListHeader: document.getElementById('path-list-header'),
+                playSlow: document.getElementById('play-slow'),
+                playFast: document.getElementById('play-fast'),
+                pause: document.getElementById('pause'),
+                reset: document.getElementById('reset'),
+                prevMinute: document.getElementById('prev-minute'),
+                nextMinute: document.getElementById('next-minute')
+            };
 
-      const Calculator = (() => {
-        let isProcessing = false;
-        const queue = [];
-        const QUEUE_ACTION = {
-          UPSERT: "upsert",
-          DELETE: "delete",
-          ANIMATE: "animate",
-        };
-
-        const processDirtyNodes = async (level) => {
-          const results = await Promise.all(
-            level.map(async (nodeId) => {
-              const node = await NodeStore.calculateNode(nodeId);
-              return node;
-            })
-          );
-          return results;
-        };
-
-        const calculateFromNode = async (nodeId) => {
-          const topology = DependencyGraph.getDownstreamTopology(nodeId);
-
-          topology.flat().forEach((id) => NodeStore.dirtyNode(id));
-
-          const nodes = await topology.reduce(async (acc, level) => {
-            const updates = await processDirtyNodes(level);
-            return [...(await acc), ...updates];
-          }, Promise.resolve([]));
-
-          await DOMUpdator.updateNodes(
-            nodes
-              .filter((node) => node.type === Types.PARAM_TYPES.DOM_NODE)
-              .flatMap((node) => node.value)
-          );
-        };
-
-        const processQueue = async () => {
-          if (isProcessing) return;
-          isProcessing = true;
-          try {
-            while (queue.length) {
-              const { nodeConfig, action } = queue.shift();
-              const { nodeId, queueAction } = nodeConfig;
-
-              const upsertNode = async (nodeId) => {
-                const node = NodeStore.getNode(nodeId);
-                if (!node) {
-                  NodeStore.createNode(nodeConfig);
+            // Application state
+            const state = {
+                map: null,
+                tracks: [],          // All tracks from GPX
+                filteredTracks: [],  // Tracks filtered by date
+                currentFileId: null,
+                timeRange: { minTime: null, maxTime: null },    // Global time range
+                currentDateRange: { minTime: null, maxTime: null }, // Date-specific range
+                trackLayers: new Map(), // Map of track ID to Leaflet layer
+                colorMap: new Map(),  // Map of track name to color
+                debounceTimer: null,  // For performance improvements during slider movements
+                slider: null,         // noUiSlider instance
+                sliderSize: 1000,     // Default slider size 
+                sliderUpdateInProgress: false,
+                currentDate: '',      // Selected date for filtering
+                minuteInMs: 60 * 1000, // One minute in milliseconds
+                playbackInfo: {
+                    isPlaying: false,
+                    speed: 0, // 0 = paused, 1 = slow, 15 = fast
+                    animationFrame: null,
+                    lastUpdateTime: 0,
+                    currentTime: null,
+                    endTime: null,
+                    useWindowMode: false,
+                    windowSize: 0,
+                    // Added for exact one-minute increments
+                    incrementMode: false,
+                    minuteCounter: 0
                 }
-                await calculateFromNode(nodeId);
-              };
+            };
 
-              switch (queueAction ? queueAction : action) {
-                case QUEUE_ACTION.UPSERT:
-                  await upsertNode(nodeId);
-                  break;
-                case QUEUE_ACTION.DELETE:
-                  NodeStore.removeNode(nodeId);
-                  break;
-                case QUEUE_ACTION.ANIMATE:
-                  await upsertNode(nodeId);
-                  queue.push({ nodeConfig, action: QUEUE_ACTION.ANIMATE });
-                  break;
-              }
-            }
-          } finally {
-            isProcessing = false;
-          }
-        };
+            // Color palette for tracks (high contrast colors)
+            const colorPalette = [
+                '#FF4136', // Red
+                '#0074D9', // Blue
+                '#2ECC40', // Green
+                '#FFDC00', // Yellow
+                '#B10DC9', // Purple
+                '#FF851B', // Orange
+                '#7FDBFF', // Light Blue
+                '#39CCCC', // Teal
+                '#F012BE', // Magenta
+                '#3D9970', // Olive
+                '#01FF70', // Lime
+                '#85144b', // Maroon
+                '#AAAAAA'  // Gray
+            ];
 
-        const enqueue = (nodeConfig, action) => {
-          queue.push({ nodeConfig, action });
-          processQueue();
-        };
+            /**
+             * Initialize the application
+             */
+            const init = () => {
+                initMap();
+                initTimeSlider();
+                bindEventListeners();
+            };
 
-        const stopAnimation = (nodeId) => {
-          const filteredQueue = queue.filter(
-            ({ nodeConfig, action }) =>
-              !(nodeConfig.nodeId === nodeId && action === QUEUE_ACTION.ANIMATE)
-          );
+            /**
+             * Initialize the Leaflet map
+             */
+            const initMap = () => {
+                state.map = L.map(elements.map).setView([0, 0], 2);
+                
+                // Add OpenStreetMap tile layer
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(state.map);
+            };
 
-          queue.length = 0;
-          queue.push(...filteredQueue);
-        };
+            /**
+             * Initialize the time range slider
+             * Time Complexity: O(1)
+             * Space Complexity: O(1)
+             */
+            const initTimeSlider = () => {
+                if (state.slider) {
+                    state.slider.destroy();
+                }
 
-        const setQueue = (newQueue) => {
-          queue.length = 0;
-          queue.push(...newQueue);
-          processQueue();
-        };
+                state.slider = noUiSlider.create(elements.timeSlider, {
+                    start: [0, state.sliderSize],
+                    connect: true,
+                    range: {
+                        'min': 0,
+                        'max': state.sliderSize
+                    },
+                    tooltips: false,
+                    format: {
+                        to: function (value) {
+                            return Math.round(value);
+                        },
+                        from: function (value) {
+                            return Math.round(value);
+                        }
+                    }
+                });
 
-        return {
-          setQueue,
-          enqueue,
-          stopAnimation,
-          isProcessing: () => isProcessing,
-          actionTypes: QUEUE_ACTION,
-        };
-      })();
+                state.slider.on('update', debounce(handleTimeRangeChange, 50));
+                state.slider.on('start', () => {
+                    // Stop playback if user manually adjusts slider
+                    if (state.playbackInfo.isPlaying) {
+                        stopPlayback();
+                    }
+                });
+            };
 
-      return {
-        setQueue: Calculator.setQueue,
-        enqueue: Calculator.enqueue,
-        stopAnimation: Calculator.stopAnimation,
-        createNode: NodeStore.createNode,
-        isProcessing: Calculator.isProcessing,
-        getNode: NodeStore.getNode,
-        getNodes: NodeStore.getNodes,
-        getGraphs: DependencyGraph.getGraphs,
-        getFunctions: FunctionRegistry.getFunctions,
-        registerFunction: FunctionRegistry.registerFunction,
-        getLambda: FunctionRegistry.getLambda,
-        paramTypes: Types.PARAM_TYPES,
-        inferType: Types.inferType,
-      };
-    })();
+            /**
+             * Bind event listeners
+             */
+            const bindEventListeners = () => {
+                elements.gpxFileInput.addEventListener('change', handleFileInput);
+                elements.dateSelector.addEventListener('change', handleDateChange);
+                
+                // Toggle path list visibility
+                elements.pathListHeader.addEventListener('click', () => {
+                    elements.pathListContainer.classList.toggle('collapsed');
+                });
+                
+                // Playback controls
+                elements.playSlow.addEventListener('click', () => startPlayback(1));
+                elements.playFast.addEventListener('click', () => startPlayback(15));
+                elements.pause.addEventListener('click', stopPlayback);
+                elements.reset.addEventListener('click', resetPlayback);
+                
+                // One-minute navigation controls
+                elements.prevMinute.addEventListener('click', () => moveByExactMinutes(-1));
+                elements.nextMinute.addEventListener('click', () => moveByExactMinutes(1));
+            };
 
-    const Main = (() => {
-      const loadFuncDefs = (funcs) => {
-        funcs.forEach((funcDef) => {
-          StateManager.registerFunction(funcDef);
+            /**
+             * Create a debounced function for performance
+             */
+            const debounce = (fn, delay) => {
+                return function(...args) {
+                    clearTimeout(state.debounceTimer);
+                    state.debounceTimer = setTimeout(() => fn.apply(this, args), delay);
+                };
+            };
+
+            /**
+             * Handle GPX file input
+             * Time Complexity: O(n) where n is the number of points in the GPX file
+             * Space Complexity: O(n) for storing parsed data
+             */
+            const handleFileInput = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                
+                const fileId = `file-${Date.now()}`;
+                state.currentFileId = fileId;
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    // Parse the GPX file
+                    try {
+                        const gpxString = e.target.result;
+                        const tracks = GPXParser.parseGPX(gpxString, fileId);
+                        state.tracks = tracks;
+                        state.filteredTracks = [...tracks]; // Initialize with all tracks
+                        
+                        // Get time range for the entire dataset
+                        state.timeRange = GPXParser.getTimeRange(tracks);
+                        state.currentDateRange = { ...state.timeRange }; // Initialize with global range
+                        
+                        // Populate date selector
+                        populateDateSelector(tracks);
+                        
+                        // Update UI
+                        updateTimeDisplay();
+                        assignTrackColors();
+                        createPathList();
+                        renderTracks();
+                        
+                        // Reset slider to full range
+                        recalculateSlider();
+                        
+                        // Fit map to track bounds if we have tracks
+                        if (tracks.length > 0) {
+                            fitMapToTracks();
+                        }
+                        
+                        // Enable playback controls now that we have data
+                        updatePlaybackControls();
+                    } catch (error) {
+                        console.error('Error parsing GPX file:', error);
+                        alert('Error parsing GPX file. Please check if the file is valid.');
+                    }
+                };
+                
+                reader.readAsText(file);
+            };
+            
+            /**
+             * Populate the date selector dropdown with unique dates from tracks
+             * Time Complexity: O(n) where n is the number of points
+             * Space Complexity: O(d) where d is the number of unique dates
+             * @param {Array} tracks - Array of track objects
+             */
+            const populateDateSelector = (tracks) => {
+                // Clear existing options except the "All Dates" option
+                while (elements.dateSelector.options.length > 1) {
+                    elements.dateSelector.remove(1);
+                }
+                
+                // Get unique dates
+                const dates = GPXParser.getUniqueDates(tracks);
+                
+                // Add date options to selector
+                dates.forEach(dateString => {
+                    const option = document.createElement('option');
+                    option.value = dateString;
+                    
+                    // Parse date and force it to be interpreted in local timezone
+                    // Split the date string and create a date with year, month (0-indexed), day
+                    const [year, month, day] = dateString.split('-').map(num => parseInt(num));
+                    const date = new Date(year, month - 1, day); // Month is 0-indexed in JavaScript Date
+                    
+                    option.textContent = date.toLocaleDateString(undefined, { 
+                        weekday: 'short', 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric' 
+                    });
+                    
+                    elements.dateSelector.appendChild(option);
+                });
+                
+                // Enable the date selector
+                elements.dateSelector.disabled = false;
+            };
+            
+            /**
+             * Handle date selection change
+             * Time Complexity: O(n) where n is the number of points
+             * Space Complexity: O(m) where m is the number of points for the selected date
+             */
+            const handleDateChange = () => {
+                const dateValue = elements.dateSelector.value;
+                state.currentDate = dateValue;
+                
+                if (dateValue === '') {
+                    // "All Dates" selected - use all tracks and global time range
+                    state.filteredTracks = [...state.tracks];
+                    state.currentDateRange = { ...state.timeRange };
+                } else {
+                    // Specific date selected - filter tracks by date
+                    state.filteredTracks = GPXParser.filterTracksByDate(state.tracks, dateValue);
+                    
+                    if (state.filteredTracks.length === 0) {
+                        alert('No tracks found for the selected date.');
+                        elements.dateSelector.value = '';
+                        state.currentDate = '';
+                        state.filteredTracks = [...state.tracks];
+                        state.currentDateRange = { ...state.timeRange };
+                    } else {
+                        // Get time range for the filtered tracks
+                        state.currentDateRange = GPXParser.getTimeRange(state.filteredTracks);
+                        
+                        // Calculate the number of minutes for the slider size
+                        recalculateSlider();
+                    }
+                }
+                
+                // Update the display and tracks
+                updateTimeDisplay();
+                renderTracks();
+                fitMapToTracks(state.filteredTracks);
+                
+                // Reset playback if it's active
+                if (state.playbackInfo.isPlaying) {
+                    stopPlayback();
+                }
+                
+                // Reset the slider to the full range for the selected date
+                resetPlayback();
+            };
+            
+            /**
+             * Recalculate the slider size based on the current date range
+             * Sets sliderSize to the number of minutes between min and max time
+             * Time Complexity: O(1)
+             * Space Complexity: O(1)
+             */
+            const recalculateSlider = () => {
+                if (!state.currentDateRange.minTime || !state.currentDateRange.maxTime) {
+                    return;
+                }
+                
+                // Calculate minutes between min and max time
+                const timeDiffMs = state.currentDateRange.maxTime.getTime() - state.currentDateRange.minTime.getTime();
+                const minutesBetween = Math.ceil(timeDiffMs / (60 * 1000));
+                
+                // Set slider size to the number of minutes (ensuring at least 10 minutes for very short tracks)
+                state.sliderSize = Math.max(minutesBetween, 10);
+                
+                // Reinitialize the slider with the new size
+                initTimeSlider();
+                
+                // Set to full range
+                state.slider.set([0, state.sliderSize]);
+            };
+            
+            /**
+             * Move the time range by an exact number of minutes
+             * @param {number} minutes - Number of minutes to move (positive or negative)
+             * Time Complexity: O(1) for computation, O(n) for rendering where n is the filtered point count
+             * Space Complexity: O(1) for additional variables
+             */
+            const moveByExactMinutes = (minutes) => {
+                if (!state.currentDateRange.minTime || !state.currentDateRange.maxTime) {
+                    return;
+                }
+                
+                // Stop any running playback
+                if (state.playbackInfo.isPlaying) {
+                    stopPlayback();
+                }
+                
+                // Get current position from slider
+                const [currentMinVal, currentMaxVal] = state.slider.get().map(v => parseInt(v));
+                const currentMinTime = getTimeFromSliderValue(currentMinVal);
+                const currentMaxTime = getTimeFromSliderValue(currentMaxVal);
+                
+                // Calculate the new times
+                const newMinTime = new Date(currentMinTime.getTime() + (minutes * state.minuteInMs));
+                const timeWindowMs = currentMaxTime.getTime() - currentMinTime.getTime();
+                const newMaxTime = new Date(newMinTime.getTime() + timeWindowMs);
+                
+                // Ensure we stay within the date range
+                const { minTime: rangeDateMinTime, maxTime: rangeDateMaxTime } = state.currentDateRange;
+                
+                // If we would go beyond the range, clamp to the range boundaries
+                if (newMinTime < rangeDateMinTime) {
+                    const clampedMinTime = rangeDateMinTime;
+                    const clampedMaxTime = new Date(clampedMinTime.getTime() + timeWindowMs);
+                    updateSliderToTimes(clampedMinTime, clampedMaxTime);
+                    return;
+                }
+                
+                if (newMaxTime > rangeDateMaxTime) {
+                    const clampedMaxTime = rangeDateMaxTime;
+                    const clampedMinTime = new Date(clampedMaxTime.getTime() - timeWindowMs);
+                    updateSliderToTimes(clampedMinTime, clampedMaxTime);
+                    return;
+                }
+                
+                // Update the slider with the new times
+                updateSliderToTimes(newMinTime, newMaxTime);
+            };
+            
+            /**
+             * Update the slider position based on exact times
+             * @param {Date} minTime - The new minimum time
+             * @param {Date} maxTime - The new maximum time
+             * Time Complexity: O(1) for computation, O(n) for rendering where n is the filtered point count
+             * Space Complexity: O(1) for additional variables
+             */
+            const updateSliderToTimes = (minTime, maxTime) => {
+                // Convert times to slider values (0-sliderSize)
+                const totalRange = state.currentDateRange.maxTime.getTime() - state.currentDateRange.minTime.getTime();
+                const minOffset = minTime.getTime() - state.currentDateRange.minTime.getTime();
+                const maxOffset = maxTime.getTime() - state.currentDateRange.minTime.getTime();
+                
+                const minPos = (minOffset / totalRange) * state.sliderSize;
+                const maxPos = (maxOffset / totalRange) * state.sliderSize;
+                
+                // Update slider (will trigger the update handler)
+                state.sliderUpdateInProgress = true;
+                state.slider.set([minPos, maxPos]);
+                state.sliderUpdateInProgress = false;
+                
+                // Manually trigger the update to refresh the map
+                handleTimeRangeChange([minPos, maxPos]);
+            };
+
+            /**
+             * Start playback animation
+             * @param {number} speed - Speed in minutes per second (1 or 15)
+             */
+            const startPlayback = (speed) => {
+                // Don't start if no data loaded
+                if (!state.currentDateRange.minTime || !state.currentDateRange.maxTime) {
+                    return;
+                }
+                
+                // Stop existing animation if running
+                if (state.playbackInfo.animationFrame) {
+                    cancelAnimationFrame(state.playbackInfo.animationFrame);
+                }
+                
+                // Get current slider values
+                const [minVal, _] = state.slider.get();
+                
+                // Setup playback info
+                state.playbackInfo.isPlaying = true;
+                state.playbackInfo.speed = speed; // minutes per second
+                state.playbackInfo.lastUpdateTime = performance.now();
+                state.playbackInfo.currentTime = getTimeFromSliderValue(minVal);
+                state.playbackInfo.endTime = getTimeFromSliderValue(state.sliderSize);
+                state.playbackInfo.incrementMode = true;
+                state.playbackInfo.minuteCounter = 0;
+
+                // Update UI
+                updatePlaybackControls();
+                
+                // Start the animation loop
+                animatePlayback();
+            };
+
+            /**
+             * Animate the playback frame by frame
+             * Modified to advance only the max time handle, keeping min time fixed
+             * Time Complexity: O(1) for computation, O(n) for rendering where n is the filtered point count
+             * Space Complexity: O(1) for additional variables
+             */
+            const animatePlayback = () => {
+                const now = performance.now();
+                const elapsed = now - state.playbackInfo.lastUpdateTime;
+                
+                // Increment the minute counter
+                state.playbackInfo.minuteCounter += (elapsed / 1000) * state.playbackInfo.speed;
+                
+                // Check if we've accumulated at least one minute
+                if (state.playbackInfo.minuteCounter >= 1) {
+                    // Calculate how many whole minutes we should advance
+                    const minutesToAdvance = Math.floor(state.playbackInfo.minuteCounter);
+                    state.playbackInfo.minuteCounter -= minutesToAdvance;
+                    
+                    // Advance the current time by exactly the number of minutes
+                    state.playbackInfo.currentTime = new Date(
+                        state.playbackInfo.currentTime.getTime() + (minutesToAdvance * state.minuteInMs)
+                    );
+                    
+                    // Reset the elapsed time counter
+                    state.playbackInfo.lastUpdateTime = now;
+                    
+                    // Check if we've reached the end
+                    if (state.playbackInfo.currentTime >= state.playbackInfo.endTime) {
+                        state.playbackInfo.currentTime = state.currentDateRange.maxTime;
+                        updateSliderToCurrentTime();
+                        stopPlayback();
+                        return;
+                    }
+                    
+                    // Update the slider position based on current time
+                    updateSliderToCurrentTime();
+                }
+                
+                // Continue animation
+                state.playbackInfo.animationFrame = requestAnimationFrame(animatePlayback);
+            };
+
+            /**
+             * Update slider position based on current playback time
+             * Modified to keep min handle fixed and only move max handle
+             * Time Complexity: O(1) for computation, O(n) for rendering where n is the filtered point count
+             * Space Complexity: O(1) for additional variables
+             */
+            const updateSliderToCurrentTime = () => {
+                // Calculate the slider position (0-sliderSize) based on current time
+                const totalRange = state.currentDateRange.maxTime.getTime() - state.currentDateRange.minTime.getTime();
+                const currentOffset = state.playbackInfo.currentTime.getTime() - state.currentDateRange.minTime.getTime();
+                const position = (currentOffset / totalRange) * state.sliderSize;
+                
+                // Get current min position from slider
+                const [minVal, _] = state.slider.get().map(v => parseInt(v));
+                
+                // Update slider keeping min handle fixed
+                state.sliderUpdateInProgress = true;
+                
+                // Only update the max handle, keeping min handle fixed
+                state.slider.set([minVal, position]);
+                
+                state.sliderUpdateInProgress = false;
+                
+                // Manually trigger the update to refresh the map
+                handleTimeRangeChange([minVal, position]);
+            };
+
+            /**
+             * Stop playback animation
+             */
+            const stopPlayback = () => {
+                if (state.playbackInfo.animationFrame) {
+                    cancelAnimationFrame(state.playbackInfo.animationFrame);
+                    state.playbackInfo.animationFrame = null;
+                }
+                
+                state.playbackInfo.isPlaying = false;
+                updatePlaybackControls();
+            };
+
+            /**
+             * Reset playback to beginning
+             */
+            const resetPlayback = () => {
+                // Stop any running playback
+                stopPlayback();
+                
+                // Reset slider to start
+                state.slider.set([0, state.sliderSize]);
+                
+                // Reset playback state
+                state.playbackInfo.currentTime = state.currentDateRange.minTime;
+                state.playbackInfo.endTime = state.currentDateRange.maxTime;
+                state.playbackInfo.minuteCounter = 0;
+                
+                // Update the map
+                handleTimeRangeChange([0, state.sliderSize]);
+            };
+
+            /**
+             * Update playback controls based on current state
+             */
+            const updatePlaybackControls = () => {
+                const hasData = state.currentDateRange.minTime !== null && state.currentDateRange.maxTime !== null;
+                
+                // Enable/disable buttons based on whether data is loaded
+                elements.playSlow.disabled = !hasData || state.playbackInfo.isPlaying;
+                elements.playFast.disabled = !hasData || state.playbackInfo.isPlaying;
+                elements.pause.disabled = !state.playbackInfo.isPlaying;
+                elements.reset.disabled = !hasData;
+                elements.prevMinute.disabled = !hasData || state.playbackInfo.isPlaying;
+                elements.nextMinute.disabled = !hasData || state.playbackInfo.isPlaying;
+                
+                // Update active state
+                elements.playSlow.classList.toggle('active', state.playbackInfo.isPlaying && state.playbackInfo.speed === 1);
+                elements.playFast.classList.toggle('active', state.playbackInfo.isPlaying && state.playbackInfo.speed === 15);
+            };
+
+            /**
+             * Handle time range slider changes
+             */
+            const handleTimeRangeChange = (values) => {
+                if (state.sliderUpdateInProgress || !state.currentDateRange.minTime || !state.currentDateRange.maxTime) {
+                    return;
+                }
+
+                state.sliderUpdateInProgress = true;
+
+                const [minVal, maxVal] = values.map(v => parseInt(v));
+                
+                // Get the actual time values based on slider position
+                const minTime = getTimeFromSliderValue(minVal);
+                const maxTime = getTimeFromSliderValue(maxVal);
+                
+                // Update display
+                updateTimeDisplay(minTime, maxTime);
+                
+                // Re-render tracks with new time range
+                renderTracks(minTime, maxTime);
+
+                state.sliderUpdateInProgress = false;
+            };
+
+            /**
+             * Convert a slider value (0-sliderSize) to an actual time
+             */
+            const getTimeFromSliderValue = (sliderValue) => {
+                const { minTime, maxTime } = state.currentDateRange;
+                const totalRange = maxTime.getTime() - minTime.getTime();
+                const offset = (sliderValue / state.sliderSize) * totalRange;
+                return new Date(minTime.getTime() + offset);
+            };
+
+            /**
+             * Update time display in the UI
+             */
+            const updateTimeDisplay = (minTime = null, maxTime = null) => {
+                if (!state.currentDateRange.minTime || !state.currentDateRange.maxTime) {
+                    elements.absoluteTimeRange.textContent = 'Time range: Not set';
+                    elements.minTimeDisplay.textContent = 'Start';
+                    elements.maxTimeDisplay.textContent = 'End';
+                    return;
+                }
+                
+                // Use provided times or the current date range
+                const min = minTime || state.currentDateRange.minTime;
+                const max = maxTime || state.currentDateRange.maxTime;
+                
+                // Format the times for display
+                const formatTime = (time) => {
+                    return time.toLocaleString(); // <-- This is causing the issue
+                };
+                
+                // Show current date filter if active
+                let rangeText = 'Time range: ';
+                if (state.currentDate) {
+                    rangeText += `(${new Date(state.currentDate).toLocaleDateString()}) `; // <-- Also needs fixing
+                }
+                rangeText += `${formatTime(state.currentDateRange.minTime)} to ${formatTime(state.currentDateRange.maxTime)}`;
+                
+                elements.absoluteTimeRange.textContent = rangeText;
+                elements.minTimeDisplay.textContent = formatTime(min);
+                elements.maxTimeDisplay.textContent = formatTime(max);
+            };
+            /**
+             * Assign colors to each track
+             * O(t) where t is the number of tracks
+             */
+            const assignTrackColors = () => {
+                state.colorMap.clear();
+                
+                state.tracks.forEach((track, index) => {
+                    const colorIndex = index % colorPalette.length;
+                    state.colorMap.set(track.name, colorPalette[colorIndex]);
+                });
+            };
+
+            /**
+             * Create the list of paths with color indicators
+             * O(t) where t is the number of tracks
+             */
+            const createPathList = () => {
+                elements.pathList.innerHTML = '';
+                
+                // Only show tracks that are currently visible (filtered by date)
+                state.filteredTracks.forEach(track => {
+                    const color = state.colorMap.get(track.name);
+                    
+                    const pathItem = document.createElement('div');
+                    pathItem.className = 'path-item';
+                    
+                    const colorIndicator = document.createElement('div');
+                    colorIndicator.className = 'color-indicator';
+                    colorIndicator.style.backgroundColor = color;
+                    
+                    const pathName = document.createElement('span');
+                    pathName.textContent = track.name;
+                    
+                    pathItem.appendChild(colorIndicator);
+                    pathItem.appendChild(pathName);
+                    
+                    elements.pathList.appendChild(pathItem);
+                });
+            };
+
+            /**
+             * Render tracks on the map based on time range
+             * Time Complexity: O(n) where n is the total number of track points
+             */
+            const renderTracks = (minTime = null, maxTime = null) => {
+                // Clear existing track layers
+                clearTrackLayers();
+                
+                // If no time specified, use full date range
+                const min = minTime || state.currentDateRange.minTime;
+                const max = maxTime || state.currentDateRange.maxTime;
+                
+                // Filter tracks by time range - use filteredTracks which already respects date selection
+                const visibleTracks = GPXParser.filterTracksByTimeRange(state.filteredTracks, min, max);
+                
+                // Update path list when date changes
+                if (!minTime && !maxTime) {
+                    createPathList();
+                }
+                
+                // Render each track
+                visibleTracks.forEach(track => {
+                    const color = state.colorMap.get(track.name);
+                    const layers = createTrackLayers(track, color);
+                    
+                    // Add to map and store reference
+                    layers.forEach(layer => layer.addTo(state.map));
+                    state.trackLayers.set(track.name, layers);
+                });
+            };
+
+            /**
+             * Create Leaflet layers for a track
+             * O(p) where p is the number of points in the track
+             */
+            const createTrackLayers = (track, color) => {
+                const layers = [];
+                
+                track.segments.forEach(segment => {
+                    if (segment.points.length < 2) return;
+                    
+                    // Convert points to GeoJSON format
+                    const linePoints = segment.points.map(point => [point.lat, point.lon]);
+                    
+                    // Create a polyline
+                    const polyline = L.polyline(linePoints, {
+                        color: color,
+                        weight: 3,
+                        opacity: 0.7
+                    });
+                    
+                    // Add tooltip with track name
+                    polyline.bindTooltip(track.name);
+                    
+                    layers.push(polyline);
+                    
+                    // Add start and end markers
+                    const startPoint = segment.points[0];
+                    const endPoint = segment.points[segment.points.length - 1];
+                    
+                    const startMarker = L.circleMarker([startPoint.lat, startPoint.lon], {
+                        color: 'white',
+                        fillColor: color,
+                        fillOpacity: 1,
+                        radius: 5,
+                        weight: 2
+                    }).bindTooltip(`Start: ${track.name} - ${startPoint.time.toLocaleString()}`);
+                    
+                    const endMarker = L.circleMarker([endPoint.lat, endPoint.lon], {
+                        color: 'white',
+                        fillColor: color,
+                        fillOpacity: 1,
+                        radius: 5,
+                        weight: 2
+                    }).bindTooltip(`End: ${track.name} - ${endPoint.time.toLocaleString()}`);
+                    
+                    layers.push(startMarker, endMarker);
+                });
+                
+                return layers;
+            };
+
+            /**
+             * Clear all track layers from the map
+             */
+            const clearTrackLayers = () => {
+                state.trackLayers.forEach((layers) => {
+                    layers.forEach(layer => {
+                        if (state.map.hasLayer(layer)) {
+                            state.map.removeLayer(layer);
+                        }
+                    });
+                });
+                
+                state.trackLayers.clear();
+            };
+
+            /**
+             * Fit map view to show all tracks
+             * @param {Array} tracksToFit - Optional array of tracks to fit, defaults to filteredTracks
+             */
+            const fitMapToTracks = (tracksToFit = null) => {
+                const tracksForBounds = tracksToFit || state.filteredTracks;
+                const bounds = [];
+                
+                tracksForBounds.forEach(track => {
+                    track.segments.forEach(segment => {
+                        segment.points.forEach(point => {
+                            bounds.push([point.lat, point.lon]);
+                        });
+                    });
+                });
+                
+                if (bounds.length > 0) {
+                    state.map.fitBounds(bounds);
+                }
+            };
+
+            // Initialize the application
+            init();
         });
-      };
-
-      const loadNodeDefs = (nodes) => {
-        const queuePart = nodes.map((nodeConfig) => {
-          return {
-            nodeConfig,
-            action: nodeConfig.queueAction ? nodeConfig.queueAction : "upsert",
-          };
-        });
-        return queuePart;
-      };
-
-      const init = (content) => {
-        loadFuncDefs(content.funcs);
-        return loadNodeDefs(content.nodes);
-      };
-
-      return {
-        init,
-      };
-    })();
-
-    document.addEventListener("DOMContentLoaded", () => {
-      const defaults = JSON.parse(
-        document.getElementById("defaults").textContent
-      );
-      Main.init(defaults);
-      const contents = JSON.parse(
-        document.getElementById("siteContent").textContent
-      );
-      const startQueue = contents.siteContent.flatMap((content) => {
-        const json = JSON.parse(document.getElementById(content).textContent);
-        return Main.init(json);
-      });
-      StateManager.setQueue(startQueue);
-    });
-  </script>
+    </script>
+</body>
 </html>
